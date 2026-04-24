@@ -103,6 +103,7 @@ function App() {
   const [sched, setSched]       = useState({});
   const [dashExp, setDashExp]   = useState(null);
   const [theme, setTheme]       = useState("Light");
+  const [userName, setUserName] = useState("Sofia");
 
   const isDark = theme==="Dark"||(theme==="System"&&window.matchMedia?.("(prefers-color-scheme:dark)").matches);
   const dk = mkDk(isDark);
@@ -178,8 +179,8 @@ function App() {
         </nav>
         <div className="px-3 mt-4">
           <div className={`flex items-center gap-2 p-2 rounded-xl ${dk.d?"bg-slate-800":"bg-slate-50"}`}>
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-400 to-violet-500 flex items-center justify-center text-white text-xs font-bold">S</div>
-            <div><div className={`text-xs font-semibold ${dk.textPri}`}>Sofia</div><div className={`text-xs ${dk.textMut}`}>Pro</div></div>
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-400 to-violet-500 flex items-center justify-center text-white text-xs font-bold">{userName.charAt(0).toUpperCase()}</div>
+            <div><div className={`text-xs font-semibold ${dk.textPri}`}>{userName}</div><div className={`text-xs ${dk.textMut}`}>Pro</div></div>
           </div>
         </div>
       </aside>
@@ -204,11 +205,11 @@ function App() {
           </div>
         </header>
         <main className="flex-1 overflow-auto">
-          {section==="dashboard"&&<Dashboard overdue={overdue} dueToday={dueToday} dueTomorrow={dueTomorrow} dueWeek={dueWeek} alerts={alerts} dismissed={dismissed} setDismissed={setDismissed} pct={pct} compToday={compToday} totToday={totToday} notes={notes} setSection={setSection} dashExp={dashExp} setDashExp={setDashExp} toggleDone={toggleDone} projects={projects} dk={dk}/>}
+          {section==="dashboard"&&<Dashboard overdue={overdue} dueToday={dueToday} dueTomorrow={dueTomorrow} dueWeek={dueWeek} alerts={alerts} dismissed={dismissed} setDismissed={setDismissed} pct={pct} compToday={compToday} totToday={totToday} notes={notes} setSection={setSection} dashExp={dashExp} setDashExp={setDashExp} toggleDone={toggleDone} projects={projects} userName={userName} dk={dk}/>}
           {section==="tasks"&&<TaskBoard tasks={filteredTasks} allTasks={tasks} projects={projects} filterP={filterP} setFilterP={setFilterP} moveTask={moveTask} toggleDone={toggleDone} deleteTask={deleteTask} setEditTask={t=>{setEditTask(t);setShowTask(true);}} deleteProject={deleteProject} setEditProject={p=>{setEditProj(p);setShowProj(true);}} setShowProj={setShowProj} dk={dk}/>}
           {section==="myday"&&<MyDay tasks={tasks} setTasks={setTasks} calDate={calDate} setCalDate={setCalDate} calStr={calStr} calTasks={calTasks} unschedCal={unschedCal} tasksInHour={tasksInHour} schedTask={schedTask} unschedTask={unschedTask} projects={projects} toggleDone={toggleDone} setEditTask={t=>{setEditTask(t);setShowTask(true);}} dk={dk}/>}
           {section==="notes"&&<Notes notes={notes} selNote={selNote} setSelNote={setSelNote} addNote={addNote} deleteNote={deleteNote} toggleFav={id=>setNotes(ns=>ns.map(n=>n.id===id?{...n,fav:!n.fav}:n))} setNotes={setNotes} dk={dk}/>}
-          {section==="settings"&&<SettingsPage theme={theme} setTheme={setTheme} dk={dk}/>}
+          {section==="settings"&&<SettingsPage theme={theme} setTheme={setTheme} userName={userName} setUserName={setUserName} dk={dk}/>}
         </main>
       </div>
 
@@ -219,7 +220,7 @@ function App() {
 }
 
 // ── Dashboard ──
-function Dashboard({overdue,dueToday,dueTomorrow,dueWeek,alerts,dismissed,setDismissed,pct,compToday,totToday,notes,setSection,dashExp,setDashExp,toggleDone,projects,dk}) {
+function Dashboard({overdue,dueToday,dueTomorrow,dueWeek,alerts,dismissed,setDismissed,pct,compToday,totToday,notes,setSection,dashExp,setDashExp,toggleDone,projects,userName,dk}) {
   const {d,surface,border,textPri,textSec,textMut,hov} = dk;
   const note = notes[0];
   const cards = [
@@ -231,7 +232,7 @@ function Dashboard({overdue,dueToday,dueTomorrow,dueWeek,alerts,dismissed,setDis
   return (
     <div className="p-7 max-w-6xl mx-auto">
       <div className="mb-7">
-        <h1 className={`text-2xl font-bold ${textPri}`}>Good morning, Sofia 👋</h1>
+        <h1 className={`text-2xl font-bold ${textPri}`}>Good morning, {userName} 👋</h1>
         <p className={`mt-1 text-sm ${textSec}`}>Here's what needs your attention today.</p>
       </div>
       <div className="grid grid-cols-4 gap-4 mb-6">
@@ -748,17 +749,16 @@ function NoteBlock({block,onChange,onCheck,dk}) {
 }
 
 // ── Settings ──
-function SettingsPage({theme,setTheme,dk}) {
+function SettingsPage({theme,setTheme,userName,setUserName,dk}) {
   const {d,surface,border,textPri,textSec,textMut} = dk;
   const [notif,setNotif]=useState(true);
-  const [name,setName]=useState("Sofia");
   return(
     <div className="p-7 max-w-2xl">
       <h1 className={`text-xl font-bold mb-6 ${textPri}`}>Settings</h1>
       {[
         {label:"Profile",body:(
           <div><label className={`text-xs font-semibold uppercase tracking-wide block mb-1 ${textSec}`}>Display Name</label>
-            <input value={name} onChange={e=>setName(e.target.value)} className={`border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 w-full max-w-xs ${d?"border-slate-700 bg-slate-800 text-slate-100":"border-slate-200 bg-white text-slate-700"}`}/></div>
+            <input value={userName} onChange={e=>setUserName(e.target.value)} className={`border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 w-full max-w-xs ${d?"border-slate-700 bg-slate-800 text-slate-100":"border-slate-200 bg-white text-slate-700"}`}/></div>
         )},
         {label:"Appearance",body:(
           <div className="flex flex-col gap-3">
