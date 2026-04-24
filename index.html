@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FlowDesk</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Make lucide icons available as window.LucideIcons
+  </script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script>
+    // Bridge lucide UMD exports to React components
+    window.LucideReact = {};
+    if (window.lucide) {
+      Object.keys(window.lucide).forEach(name => {
+        window.LucideReact[name] = function(props) {
+          const { size=24, color="currentColor", strokeWidth=2, className="", ...rest } = props || {};
+          const iconData = window.lucide[name];
+          if (!iconData) return null;
+          const [tag, attrs, children=[]] = iconData;
+          const svgProps = {
+            xmlns:"http://www.w3.org/2000/svg",
+            width: size, height: size,
+            viewBox: "0 0 24 24",
+            fill: "none",
+            stroke: color,
+            strokeWidth: strokeWidth,
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            className,
+            ...rest
+          };
+          function makeEl(node) {
+            if (!Array.isArray(node)) return null;
+            const [t, a, ch=[]] = node;
+            return React.createElement(t, a, ...ch.map(makeEl));
+          }
+          return React.createElement('svg', svgProps, ...children.map(makeEl));
+        };
+      });
+    }
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Inter', system-ui, sans-serif; }
+    input[type=date]::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useRef } = React;
+    const {
+      LayoutDashboard, CheckSquare, Sun, FileText, Settings,
+      Search, Plus, Bell, ChevronLeft, ChevronRight, X, Star,
+      Trash2, AlertCircle, Clock, Filter, Circle, CheckCircle2,
+      Zap, Target, Coffee, BookOpen, Edit3, Calendar, TrendingUp,
+      Award
+    } = window.LucideReact;
+
+    const PRIORITIES = ["Low","Medium","High","Urgent"];
+    const PRIORITY_COLOR = { Low:"bg-slate-100 text-slate-600", Medium:"bg-blue-100 text-blue-700", High:"bg-orange-100 text-orange-700", Urgent:"bg-red-100 text-red-700" };
+    const PRIORITY_DOT = { Low:"bg-slate-400", Medium:"bg-blue-500", High:"bg-orange-500", Urgent:"bg-red-500" };
+    const STATUS_COLS = ["To Do","In Progress","Waiting","Done"];
+    const CATEGORIES = ["Work","Personal","Design","Dev","Marketing","Health"];
+    const PROJECT_COLORS = ["bg-violet-500","bg-blue-500","bg-emerald-500","bg-orange-500","bg-pink-500","bg-teal-500","bg-red-500","bg-amber-500"];
+
+    const today = new Date();
+    const fmt = (d) => d.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});
+    const fmtShort = (d) => d.toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+    const addDays = (d,n) => { const x=new Date(d); x.setDate(x.getDate()+n); return x; };
+    const dateStr = (d) => d.toISOString().split("T")[0];
+    const todayStr = dateStr(today);
+    const tomorrowStr = dateStr(addDays(today,1));
+
+    const initProjects = [
+      {id:"p1",name:"Website Redesign",colorIdx:0},
+      {id:"p2",name:"Q3 Planning",colorIdx:1},
+      {id:"p3",name:"Mobile App",colorIdx:2},
+      {id:"p4",name:"Marketing",colorIdx:3},
+    ];
+
+    const initTasks = [];
+    const initNotes = [];
+
+    const HOURS = Array.from({length:10},(_,i)=>`${String(i+9).padStart(2,"0")}:00`);
+
+    function App() {
+      const [section, setSection] = useState("dashboard");
+      const [tasks, setTasks] = useState(initTasks);
+      const [projects, setProjects] = useState(initProjects);
+      const [notes, setNotes] = useState(initNotes);
+      const [selectedNote, setSelectedNote] = useState(null);
+      const [dismissedAlerts, setDismissedAlerts] = useState([]);
+      const [showModal, setShowModal] = useState(false);
+      const [editTask, setEditTask] = useState(null);
+      const [searchQ, setSearchQ] = useState("");
+      const [filterPriority, setFilterPriority] = useState("All");
+      const [calDate, setCalDate] = useState(new Date(today));
+      const [calSchedule, setCalSchedule] = useState({});
+      const [focusMode, setFocusMode] = useState(false);
+      const [showProjectModal, setShowProjectModal] = useState(false);
+      const [dashExpanded, setDashExpanded] = useState(null);
+      const [theme, setTheme] = useState("Light");
+
+      const isDark = theme === "Dark" || (theme === "System" && window.matchMedia?.("(prefers-color-scheme: dark)").matches);
+      const d = isDark;
+      const bg       = d ? "bg-slate-950"   : "bg-slate-50";
+      const surface  = d ? "bg-slate-900"   : "bg-white";
+      const border   = d ? "border-slate-700" : "border-slate-100";
+      const textPri  = d ? "text-slate-100" : "text-slate-800";
+      const textSec  = d ? "text-slate-400" : "text-slate-500";
+      const textMut  = d ? "text-slate-500" : "text-slate-400";
+      const hov      = d ? "hover:bg-slate-800" : "hover:bg-slate-50";
+      const navAct   = d ? "bg-indigo-950 text-indigo-300" : "bg-indigo-50 text-indigo-700";
+      const navInact = d ? `text-slate-400 hover:bg-slate-800 hover:text-slate-200` : `text-slate-500 hover:bg-slate-50 hover:text-slate-700`;
+      const dk = {isDark:d,bg,surface,border,textPri,textSec,textMut,hov,navAct,navInact};
+
+      const calStr = dateStr(calDate);
+      const overdue = tasks.filter(t=>t.deadline<todayStr&&!t.done);
+      const dueToday = tasks.filter(t=>t.deadline===todayStr&&!t.done);
+      const dueTomorrow = tasks.filter(t=>t.deadline===tomorrowStr&&!t.done);
+      const dueThisWeek = tasks.filter(t=>t.deadline>tomorrowStr&&t.deadline<=dateStr(addDays(today,7))&&!t.done);
+      const completedToday = tasks.filter(t=>t.done&&t.deadline===todayStr).length;
+      const totalToday = tasks.filter(t=>t.deadline===todayStr).length;
+      const progressPct = totalToday?Math.round((completedToday/totalToday)*100):0;
+      const priorityAlerts = [...overdue,...dueToday.filter(t=>t.priority==="Urgent"||t.priority==="High")].filter(t=>!dismissedAlerts.includes(t.id)).slice(0,4);
+
+      const handleAddTask = (data) => {
+        if(editTask) setTasks(ts=>ts.map(t=>t.id===editTask.id?{...t,...data}:t));
+        else setTasks(ts=>[...ts,{id:Date.now(),...data,done:data.status==="Done"}]);
+        setShowModal(false); setEditTask(null);
+      };
+      const moveTask = (tid,toPid) => setTasks(ts=>ts.map(t=>t.id===tid?{...t,project:toPid}:t));
+      const toggleDone = (id) => setTasks(ts=>ts.map(t=>t.id===id?{...t,done:!t.done,status:!t.done?"Done":t.status==="Done"?"To Do":t.status}:t));
+      const deleteTask = (id) => setTasks(ts=>ts.filter(t=>t.id!==id));
+      const deleteProject = (pid) => { setProjects(ps=>ps.filter(p=>p.id!==pid)); setTasks(ts=>ts.map(t=>t.project===pid?{...t,project:null}:t)); };
+      const addProject = (name,colorIdx) => setProjects(ps=>[...ps,{id:"p"+Date.now(),name,colorIdx}]);
+
+      const filteredTasks = tasks.filter(t=>{
+        const q=searchQ.toLowerCase();
+        if(q&&!t.title.toLowerCase().includes(q)&&!t.desc.toLowerCase().includes(q)) return false;
+        if(filterPriority!=="All"&&t.priority!==filterPriority) return false;
+        return true;
+      });
+
+      const scheduleTask=(tid,hour,date)=>setCalSchedule(p=>({...p,[date]:{...(p[date]||{}),[tid]:hour}}));
+      const unscheduleTask=(tid,date)=>setCalSchedule(p=>{const c={...(p[date]||{})};delete c[tid];return{...p,[date]:c};});
+      const tasksInHour=(hour,date)=>tasks.filter(t=>calSchedule[date]?.[t.id]===hour||(t.time===hour&&t.deadline===date&&!calSchedule[date]?.[t.id]));
+      const calDayTasks=tasks.filter(t=>t.deadline===calStr&&!t.done);
+      const unscheduledCalTasks=calDayTasks.filter(t=>!calSchedule[calStr]?.[t.id]&&!t.time);
+
+      const navItems=[
+        {id:"dashboard",icon:LayoutDashboard,label:"Dashboard"},
+        {id:"tasks",icon:CheckSquare,label:"Tasks"},
+        {id:"myday",icon:Sun,label:"My Day"},
+        {id:"notes",icon:FileText,label:"Notes"},
+        {id:"settings",icon:Settings,label:"Settings"},
+      ];
+
+      return (
+        <div className={`flex h-screen ${bg} overflow-hidden`} style={{fontFamily:"'Inter',system-ui,sans-serif",height:"100vh"}}>
+          <aside className={`w-56 ${surface} border-r ${border} flex flex-col py-5 px-3 shrink-0`}>
+            <div className="flex items-center gap-2 px-3 mb-8">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
+                <Zap size={14} color="white"/>
+              </div>
+              <span className={`font-bold text-sm tracking-tight ${textPri}`}>FlowDesk</span>
+            </div>
+            <nav className="flex flex-col gap-1 flex-1">
+              {navItems.map(({id,icon:Icon,label})=>(
+                <button key={id} onClick={()=>setSection(id)}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${section===id?navAct:navInact}`}>
+                  <Icon size={17}/>{label}
+                  {id==="tasks"&&overdue.length>0&&<span className="ml-auto bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">{overdue.length}</span>}
+                </button>
+              ))}
+            </nav>
+            <div className="px-3 mt-4">
+              <div className={`flex items-center gap-2 p-2 rounded-xl ${d?"bg-slate-800":"bg-slate-50"}`}>
+                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-400 to-violet-500 flex items-center justify-center text-white text-xs font-bold">S</div>
+                <div><div className={`text-xs font-semibold ${textPri}`}>Sofia</div><div className={`text-xs ${textMut}`}>Pro</div></div>
+              </div>
+            </div>
+          </aside>
+
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <header className={`h-14 ${surface} border-b ${border} flex items-center px-5 gap-4 shrink-0`}>
+              <div className={`flex items-center gap-2 rounded-xl px-3 py-2 flex-1 max-w-sm ${d?"bg-slate-800":"bg-slate-50"}`}>
+                <Search size={15} className={textMut}/>
+                <input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search tasks and notes…"
+                  className={`bg-transparent text-sm outline-none w-full ${d?"text-slate-100 placeholder-slate-500":"text-slate-700 placeholder-slate-400"}`}/>
+              </div>
+              <span className={`text-sm font-medium ml-2 ${textMut}`}>{fmt(today)}</span>
+              <div className="flex items-center gap-2 ml-auto">
+                <button className={`relative p-2 rounded-xl ${hov} ${textSec}`}><Bell size={17}/>{priorityAlerts.length>0&&<span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"/>}</button>
+                <button onClick={()=>{setEditTask(null);setShowModal(true);}} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors">
+                  <Plus size={15}/>Add Task
+                </button>
+              </div>
+            </header>
+            <main className="flex-1 overflow-auto">
+              {section==="dashboard"&&<Dashboard tasks={tasks} overdue={overdue} dueToday={dueToday} dueTomorrow={dueTomorrow} dueThisWeek={dueThisWeek} priorityAlerts={priorityAlerts} dismissedAlerts={dismissedAlerts} setDismissedAlerts={setDismissedAlerts} progressPct={progressPct} completedToday={completedToday} totalToday={totalToday} notes={notes} setSection={setSection} dashExpanded={dashExpanded} setDashExpanded={setDashExpanded} toggleDone={toggleDone} projects={projects} dk={dk}/>}
+              {section==="tasks"&&<TaskBoard tasks={filteredTasks} allTasks={tasks} projects={projects} filterPriority={filterPriority} setFilterPriority={setFilterPriority} moveTask={moveTask} toggleDone={toggleDone} deleteTask={deleteTask} setEditTask={setEditTask} setShowModal={setShowModal} deleteProject={deleteProject} showProjectModal={showProjectModal} setShowProjectModal={setShowProjectModal} addProject={addProject} dk={dk}/>}
+              {section==="myday"&&<MyDay tasks={tasks} setTasks={setTasks} calDate={calDate} setCalDate={setCalDate} calStr={calStr} calDayTasks={calDayTasks} unscheduledCalTasks={unscheduledCalTasks} tasksInHour={tasksInHour} scheduleTask={scheduleTask} unscheduleTask={unscheduleTask} focusMode={focusMode} setFocusMode={setFocusMode} projects={projects} toggleDone={toggleDone} setEditTask={setEditTask} setShowModal={setShowModal} dk={dk}/>}
+              {section==="notes"&&<Notes notes={notes} selectedNote={selectedNote} setSelectedNote={setSelectedNote} addNote={()=>{const n={id:Date.now(),title:"Untitled Note",fav:false,content:[{type:"h2",text:"Untitled Note"},{type:"p",text:"Start writing..."}]};setNotes(ns=>[n,...ns]);setSelectedNote(n.id);}} deleteNote={id=>setNotes(ns=>ns.filter(n=>n.id!==id))} toggleFav={id=>setNotes(ns=>ns.map(n=>n.id===id?{...n,fav:!n.fav}:n))} setNotes={setNotes} dk={dk}/>}
+              {section==="settings"&&<SettingsPage theme={theme} setTheme={setTheme} dk={dk}/>}
+            </main>
+          </div>
+          {showModal&&<TaskModal task={editTask} projects={projects} onSave={handleAddTask} onClose={()=>{setShowModal(false);setEditTask(null);}} dk={dk}/>}
+          {showProjectModal&&<ProjectModal onSave={(n,c)=>{addProject(n,c);setShowProjectModal(false);}} onClose={()=>setShowProjectModal(false)} dk={dk}/>}
+        </div>
+      );
+    }
+
+    // ── Dashboard ──
+    function Dashboard({tasks,overdue,dueToday,dueTomorrow,dueThisWeek,priorityAlerts,dismissedAlerts,setDismissedAlerts,progressPct,completedToday,totalToday,notes,setSection,dashExpanded,setDashExpanded,toggleDone,projects,dk}) {
+      const {isDark:d,surface,border,textPri,textSec,textMut,hov} = dk;
+      const note=notes[0];
+      const cards=[
+        {key:"overdue",label:"Overdue",val:overdue.length,icon:AlertCircle,bg:"bg-red-50",tc:"text-red-600",tasks:overdue,accent:"text-red-600"},
+        {key:"today",label:"Due Today",val:dueToday.length,icon:Calendar,bg:"bg-blue-50",tc:"text-blue-600",tasks:dueToday,accent:"text-blue-600"},
+        {key:"tomorrow",label:"Due Tomorrow",val:dueTomorrow.length,icon:Clock,bg:"bg-amber-50",tc:"text-amber-600",tasks:dueTomorrow,accent:"text-amber-600"},
+        {key:"week",label:"Due This Week",val:dueThisWeek.length,icon:TrendingUp,bg:"bg-violet-50",tc:"text-violet-600",tasks:dueThisWeek,accent:"text-violet-600"},
+      ];
+      return (
+        <div className="p-7 max-w-6xl mx-auto">
+          <div className="mb-7">
+            <h1 className={`text-2xl font-bold ${textPri}`}>Good morning, Sofia 👋</h1>
+            <p className={`mt-1 text-sm ${textSec}`}>Here's what needs your attention today.</p>
+          </div>
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            {cards.map(({key,label,val,icon:Icon,bg,tc,accent})=>(
+              <button key={key} onClick={()=>setDashExpanded(dashExpanded===key?null:key)}
+                className={`${surface} rounded-2xl p-5 border text-left transition-all hover:shadow-md ${dashExpanded===key?`border-indigo-300 ring-2 ring-indigo-100 shadow-md`:`${border} shadow-sm`}`}>
+                <div className={`w-9 h-9 rounded-xl ${d?"bg-slate-800":bg} flex items-center justify-center mb-3`}><Icon size={18} className={d?"text-slate-300":tc}/></div>
+                <div className={`text-2xl font-bold ${textPri}`}>{val}</div>
+                <div className={`text-xs mt-0.5 font-medium ${textSec}`}>{label}</div>
+                {val>0&&<div className={`text-xs mt-2 font-semibold ${d?"text-indigo-400":accent}`}>{dashExpanded===key?"Hide ↑":"View all →"}</div>}
+              </button>
+            ))}
+          </div>
+          {dashExpanded&&(()=>{
+            const card=cards.find(c=>c.key===dashExpanded);
+            return(
+              <div className={`${surface} rounded-2xl border ${border} shadow-sm mb-6 overflow-hidden`}>
+                <div className={`flex items-center justify-between px-5 py-4 border-b ${border}`}>
+                  <h2 className={`font-semibold text-sm ${textPri}`}>{card.label} · {card.tasks.length} tasks</h2>
+                  <button onClick={()=>setDashExpanded(null)} className={textMut}><X size={16}/></button>
+                </div>
+                {card.tasks.length===0?<div className={`py-10 text-center text-sm ${textSec}`}>No tasks here 🎉</div>:(
+                  <div className={`divide-y ${d?"divide-slate-700":"divide-slate-50"}`}>
+                    {card.tasks.map(t=>{
+                      const proj=projects.find(p=>p.id===t.project);
+                      return(
+                        <div key={t.id} className={`flex items-center gap-3 px-5 py-3 ${hov} transition-colors`}>
+                          <button onClick={()=>toggleDone(t.id)} className="text-slate-300 hover:text-emerald-500 shrink-0">{t.done?<CheckCircle2 size={16} className="text-emerald-500"/>:<Circle size={16}/>}</button>
+                          <div className="flex-1 min-w-0">
+                            <div className={`text-sm font-medium truncate ${textPri}`}>{t.title}</div>
+                            {t.desc&&<div className={`text-xs truncate ${textMut}`}>{t.desc}</div>}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {proj&&<span className={`text-xs px-2 py-0.5 rounded-full text-white font-medium ${PROJECT_COLORS[proj.colorIdx%PROJECT_COLORS.length]}`}>{proj.name}</span>}
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLOR[t.priority]}`}>{t.priority}</span>
+                            <span className={`text-xs ${textMut}`}>{fmtShort(new Date(t.deadline+"T00:00:00"))}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+          <div className="grid grid-cols-3 gap-5">
+            <div className="col-span-2">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className={`font-semibold text-sm ${textPri}`}>Priority Alerts</h2>
+                <span className={`text-xs ${textMut}`}>{priorityAlerts.length} active</span>
+              </div>
+              {priorityAlerts.length===0?(
+                <div className={`${surface} rounded-2xl border ${border} p-8 text-center`}>
+                  <CheckCircle2 size={28} className="text-emerald-400 mx-auto mb-2"/>
+                  <p className={`text-sm font-medium ${textPri}`}>You're all caught up!</p>
+                  <p className={`text-xs mt-1 ${textMut}`}>No urgent tasks right now.</p>
+                </div>
+              ):(
+                <div className="flex flex-col gap-3">
+                  {priorityAlerts.map(t=>(
+                    <div key={t.id} className={`border-l-4 ${{Urgent:"border-l-red-500",High:"border-l-orange-400",Medium:"border-l-blue-400",Low:"border-l-slate-300"}[t.priority]} ${d?"bg-slate-800":"bg-slate-50"} rounded-r-2xl p-4 flex items-start justify-between`}>
+                      <div>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${PRIORITY_COLOR[t.priority]}`}>{t.priority}</span>
+                          {t.deadline<todayStr&&<span className="text-xs font-semibold text-red-500">Overdue</span>}
+                        </div>
+                        <div className={`font-semibold text-sm mt-1 ${textPri}`}>{t.title}</div>
+                        <div className={`text-xs mt-0.5 flex items-center gap-1 ${textMut}`}><Clock size={11}/> Due {fmtShort(new Date(t.deadline+"T00:00:00"))}</div>
+                      </div>
+                      <button onClick={()=>setDismissedAlerts(da=>[...da,t.id])} className={`ml-4 mt-0.5 ${textMut} hover:text-red-400`}><X size={15}/></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <h2 className={`font-semibold text-sm mt-6 mb-3 ${textPri}`}>Today's Schedule</h2>
+              <div className={`${surface} rounded-2xl border ${border} p-4`}>
+                {dueToday.filter(t=>t.time).length===0?(
+                  <p className={`text-sm text-center py-3 ${textSec}`}>No scheduled tasks. <button onClick={()=>setSection("myday")} className="text-indigo-500 hover:underline">Plan your day →</button></p>
+                ):(
+                  <div className="flex flex-col gap-2">
+                    {dueToday.filter(t=>t.time).sort((a,b)=>a.time>b.time?1:-1).map(t=>(
+                      <div key={t.id} className={`flex items-center gap-3 p-2 rounded-xl ${hov}`}>
+                        <span className={`text-xs font-mono w-12 shrink-0 ${textMut}`}>{t.time}</span>
+                        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${PRIORITY_DOT[t.priority]}`}/>
+                        <span className={`text-sm font-medium ${textPri}`}>{t.title}</span>
+                        <span className={`ml-auto text-xs ${textMut}`}>{t.category}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col gap-5">
+              <div className={`${surface} rounded-2xl border ${border} p-5`}>
+                <h2 className={`font-semibold text-sm mb-4 ${textPri}`}>Today's Progress</h2>
+                <div className="flex flex-col items-center"><ProgressRing pct={progressPct}/><p className={`text-xs mt-3 ${textMut}`}>{completedToday}/{totalToday} tasks completed</p></div>
+              </div>
+              <div className={`${surface} rounded-2xl border ${border} p-5 flex-1`}>
+                <h2 className={`font-semibold text-sm mb-3 ${textPri}`}>Quick Notes</h2>
+                {note?(
+                  <div>
+                    <div className={`text-sm font-semibold mb-2 ${textPri}`}>{note.title}</div>
+                    {note.content.slice(0,3).map((b,i)=>(
+                      <div key={i} className={`text-xs mb-1 leading-relaxed ${textSec}`}>
+                        {b.type==="bullet"&&<span>• {b.text}</span>}
+                        {b.type==="p"&&<span>{b.text}</span>}
+                        {(b.type==="h2"||b.type==="h3")&&<span className={`font-semibold ${textPri}`}>{b.text}</span>}
+                      </div>
+                    ))}
+                  </div>
+                ):<p className={`text-xs ${textMut}`}>No notes yet.</p>}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ProgressRing({pct}) {
+      const r=36,c=2*Math.PI*r,dash=c*(pct/100);
+      return(
+        <svg width="90" height="90" viewBox="0 0 90 90">
+          <circle cx="45" cy="45" r={r} fill="none" stroke="#e2e8f0" strokeWidth="8"/>
+          <circle cx="45" cy="45" r={r} fill="none" stroke="#6366f1" strokeWidth="8" strokeDasharray={`${dash} ${c}`} strokeLinecap="round" transform="rotate(-90 45 45)"/>
+          <text x="45" y="50" textAnchor="middle" fontSize="16" fontWeight="700" fill="#1e293b">{pct}%</text>
+        </svg>
+      );
+    }
+
+    // ── TaskBoard ──
+    function TaskBoard({tasks,allTasks,projects,filterPriority,setFilterPriority,moveTask,toggleDone,deleteTask,setEditTask,setShowModal,deleteProject,showProjectModal,setShowProjectModal,addProject,dk}) {
+      const {isDark:d,surface,border,textPri,textSec,textMut,hov} = dk;
+      const [dragId,setDragId]=useState(null);
+      const [overProj,setOverProj]=useState(null);
+      const byProject=(pid)=>tasks.filter(t=>t.project===pid);
+      const unassigned=tasks.filter(t=>!t.project||!projects.find(p=>p.id===t.project));
+      return(
+        <div className="p-7 h-full flex flex-col">
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <h1 className={`text-xl font-bold ${textPri}`}>Task Board</h1>
+              <p className={`text-sm mt-0.5 ${textSec}`}>{allTasks.filter(t=>!t.done).length} active tasks across {projects.length} projects</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className={`flex items-center gap-2 ${surface} border ${border} rounded-xl px-3 py-2`}>
+                <Filter size={14} className={textMut}/>
+                <select value={filterPriority} onChange={e=>setFilterPriority(e.target.value)} className={`text-sm bg-transparent outline-none ${textPri}`}>
+                  <option>All</option>{PRIORITIES.map(p=><option key={p}>{p}</option>)}
+                </select>
+              </div>
+              <button onClick={()=>setShowProjectModal(true)} className={`flex items-center gap-2 ${surface} ${hov} border ${border} ${textPri} text-sm font-medium px-4 py-2 rounded-xl transition-colors`}><Plus size={15}/>New Project</button>
+              <button onClick={()=>{setEditTask(null);setShowModal(true);}} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"><Plus size={15}/>New Task</button>
+            </div>
+          </div>
+          <div className="flex gap-4 flex-1 overflow-x-auto pb-2">
+            {projects.map(proj=>{
+              const ptasks=byProject(proj.id);
+              const done=ptasks.filter(t=>t.done).length;
+              const pct=ptasks.length?Math.round((done/ptasks.length)*100):0;
+              return(
+                <div key={proj.id}
+                  className={`flex flex-col rounded-2xl border min-w-72 w-80 shrink-0 overflow-hidden ${d?"bg-slate-900":"bg-white"} shadow-sm transition-all ${overProj===proj.id?"ring-2 ring-indigo-400 border-indigo-300":border}`}
+                  onDragOver={e=>{e.preventDefault();setOverProj(proj.id);}}
+                  onDragLeave={()=>setOverProj(null)}
+                  onDrop={e=>{e.preventDefault();if(dragId)moveTask(dragId,proj.id);setOverProj(null);setDragId(null);}}>
+                  <div className={`p-4 border-b ${border} ${d?"bg-slate-900":"bg-white"}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-3 h-3 rounded-full ${PROJECT_COLORS[proj.colorIdx%PROJECT_COLORS.length]}`}/>
+                        <span className={`text-sm font-bold ${textPri}`}>{proj.name}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className={`text-xs font-medium ${textMut} ${d?"bg-slate-800":"bg-slate-100"} rounded-full px-2 py-0.5`}>{ptasks.length}</span>
+                        <button onClick={()=>deleteProject(proj.id)} className="text-slate-400 hover:text-red-400 ml-1 p-0.5"><Trash2 size={13}/></button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className={`flex-1 h-1.5 ${d?"bg-slate-800":"bg-slate-100"} rounded-full overflow-hidden`}>
+                        <div className={`h-full rounded-full ${PROJECT_COLORS[proj.colorIdx%PROJECT_COLORS.length]}`} style={{width:`${pct}%`}}/>
+                      </div>
+                      <span className={`text-xs font-medium w-8 text-right ${textMut}`}>{pct}%</span>
+                    </div>
+                  </div>
+                  <div className={`flex flex-col gap-2 flex-1 overflow-y-auto p-3 ${d?"bg-slate-900":""}`}>
+                    {ptasks.length===0&&<div className={`flex-1 flex flex-col items-center justify-center py-10 ${textMut}`}><Circle size={22} className="mb-2 opacity-30"/><p className="text-xs">Drop tasks here</p></div>}
+                    {ptasks.map(t=><TaskCard key={t.id} task={t} projects={projects} dk={dk} onDragStart={()=>setDragId(t.id)} onDragEnd={()=>setDragId(null)} onToggle={()=>toggleDone(t.id)} onEdit={()=>{setEditTask(t);setShowModal(true);}} onDelete={()=>deleteTask(t.id)}/>)}
+                  </div>
+                </div>
+              );
+            })}
+            {unassigned.length>0&&(
+              <div className={`flex flex-col rounded-2xl border-2 border-dashed ${d?"border-slate-700 bg-slate-900":"border-slate-300 bg-slate-50"} min-w-72 w-80 shrink-0 overflow-hidden`}>
+                <div className={`p-4 border-b ${border} ${d?"bg-slate-900":""}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-slate-400"/>
+                    <span className={`text-sm font-bold ${textSec}`}>Unassigned</span>
+                    <span className={`ml-auto text-xs font-medium ${textMut} ${d?"bg-slate-800 border-slate-700":"bg-white border-slate-200"} rounded-full px-2 py-0.5 border`}>{unassigned.length}</span>
+                  </div>
+                </div>
+                <div className={`flex flex-col gap-2 p-3 overflow-y-auto flex-1 ${d?"bg-slate-900":""}`}>
+                  {unassigned.map(t=><TaskCard key={t.id} task={t} projects={projects} dk={dk} onDragStart={()=>setDragId(t.id)} onDragEnd={()=>setDragId(null)} onToggle={()=>toggleDone(t.id)} onEdit={()=>{setEditTask(t);setShowModal(true);}} onDelete={()=>deleteTask(t.id)}/>)}
+                </div>
+              </div>
+            )}
+            <button onClick={()=>setShowProjectModal(true)}
+              className={`flex flex-col items-center justify-center min-w-48 w-56 shrink-0 rounded-2xl border-2 border-dashed ${d?"border-slate-700 hover:border-indigo-500 text-slate-500 hover:text-indigo-400":"border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 text-slate-400 hover:text-indigo-500"} transition-all p-8 gap-2`}>
+              <Plus size={20}/><span className="text-sm font-medium">New Project</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    function TaskCard({task,projects,onDragStart,onDragEnd,onToggle,onEdit,onDelete,dk}) {
+      const {isDark:d,textPri,textMut} = dk;
+      const [hover,setHover]=useState(false);
+      const isOverdue=task.deadline<todayStr&&!task.done;
+      return(
+        <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
+          onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+          className={`${d?"bg-slate-800 border-slate-700":"bg-white border-slate-100"} rounded-xl border p-3 cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md transition-all select-none`}>
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <button onClick={onToggle} className="mt-0.5 shrink-0 text-slate-400 hover:text-emerald-500 transition-colors">{task.done?<CheckCircle2 size={16} className="text-emerald-500"/>:<Circle size={16}/>}</button>
+            <span className={`text-sm font-medium leading-snug flex-1 ${task.done?"line-through opacity-40":textPri}`}>{task.title}</span>
+            {hover&&<div className="flex gap-1 shrink-0">
+              <button onClick={onEdit} className="text-slate-400 hover:text-indigo-400"><Edit3 size={13}/></button>
+              <button onClick={onDelete} className="text-slate-400 hover:text-red-400"><Trash2 size={13}/></button>
+            </div>}
+          </div>
+          {task.desc&&<p className={`text-xs mb-2 leading-relaxed line-clamp-2 pl-6 ${textMut}`}>{task.desc}</p>}
+          <div className="flex items-center gap-1.5 flex-wrap pl-6">
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLOR[task.priority]}`}>{task.priority}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${task.status==="Done"?"bg-emerald-100 text-emerald-700":task.status==="In Progress"?"bg-blue-100 text-blue-700":task.status==="Waiting"?"bg-amber-100 text-amber-700":d?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>{task.status}</span>
+            {isOverdue&&<span className="text-xs text-red-500 font-semibold flex items-center gap-0.5"><AlertCircle size={10}/>Overdue</span>}
+            {task.deadline&&!isOverdue&&<span className={`text-xs flex items-center gap-0.5 ml-auto ${textMut}`}><Clock size={10}/>{fmtShort(new Date(task.deadline+"T00:00:00"))}</span>}
+          </div>
+        </div>
+      );
+    }
+
+    // ── TaskModal ──
+    function TaskModal({task,onSave,onClose,projects=[],dk}) {
+      const {isDark:d,surface,border,textPri,textSec,textMut} = dk;
+      const [form,setForm]=useState({title:task?.title||"",desc:task?.desc||"",deadline:task?.deadline||todayStr,priority:task?.priority||"Medium",status:task?.status||"To Do",category:task?.category||"Work",time:task?.time||"",project:task?.project||projects[0]?.id||""});
+      const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+      const inputCls=`w-full border ${d?"border-slate-700 bg-slate-800 text-slate-100 placeholder-slate-500":"border-slate-200 bg-white text-slate-700"} rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400`;
+      const selectCls=`w-full border ${d?"border-slate-700 bg-slate-800 text-slate-100":"border-slate-200 bg-white text-slate-700"} rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400`;
+      return(
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
+          <div className={`${surface} rounded-2xl shadow-2xl w-full max-w-lg p-6`} onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className={`text-lg font-bold ${textPri}`}>{task?"Edit Task":"New Task"}</h2>
+              <button onClick={onClose} className={`${textMut} hover:text-red-400`}><X size={18}/></button>
+            </div>
+            <div className="flex flex-col gap-4">
+              <div><label className={`text-xs font-semibold uppercase tracking-wide mb-1 block ${textSec}`}>Title</label><input value={form.title} onChange={e=>set("title",e.target.value)} placeholder="Task title…" className={inputCls} autoFocus/></div>
+              <div><label className={`text-xs font-semibold uppercase tracking-wide mb-1 block ${textSec}`}>Description</label><textarea value={form.desc} onChange={e=>set("desc",e.target.value)} rows={2} placeholder="Optional description…" className={`${inputCls} resize-none`}/></div>
+              <div><label className={`text-xs font-semibold uppercase tracking-wide mb-1 block ${textSec}`}>Project</label>
+                <select value={form.project} onChange={e=>set("project",e.target.value)} className={selectCls}>
+                  <option value="">— No Project —</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className={`text-xs font-semibold uppercase tracking-wide mb-1 block ${textSec}`}>Deadline</label><input type="date" value={form.deadline} onChange={e=>set("deadline",e.target.value)} className={inputCls}/></div>
+                <div><label className={`text-xs font-semibold uppercase tracking-wide mb-1 block ${textSec}`}>Time (opt.)</label><input type="time" value={form.time} onChange={e=>set("time",e.target.value)} className={inputCls}/></div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                {[["Priority","priority",PRIORITIES],["Status","status",STATUS_COLS],["Category","category",CATEGORIES]].map(([lbl,key,opts])=>(
+                  <div key={key}><label className={`text-xs font-semibold uppercase tracking-wide mb-1 block ${textSec}`}>{lbl}</label>
+                    <select value={form[key]} onChange={e=>set(key,e.target.value)} className={selectCls}>{opts.map(o=><option key={o}>{o}</option>)}</select>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={onClose} className={`px-4 py-2 rounded-xl text-sm font-medium ${textSec} ${d?"hover:bg-slate-800":"hover:bg-slate-100"} transition-colors`}>Cancel</button>
+              <button onClick={()=>form.title&&onSave(form)} className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors">{task?"Save Changes":"Create Task"}</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ProjectModal({onSave,onClose,dk}) {
+      const {isDark:d,surface,border,textPri,textSec,textMut} = dk;
+      const [name,setName]=useState("");
+      const [colorIdx,setColorIdx]=useState(0);
+      return(
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
+          <div className={`${surface} rounded-2xl shadow-2xl w-full max-w-sm p-6`} onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className={`text-lg font-bold ${textPri}`}>New Project</h2>
+              <button onClick={onClose} className={`${textMut} hover:text-red-400`}><X size={18}/></button>
+            </div>
+            <div className="flex flex-col gap-4">
+              <div><label className={`text-xs font-semibold uppercase tracking-wide mb-1 block ${textSec}`}>Project Name</label>
+                <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Product Launch" autoFocus
+                  className={`w-full border ${d?"border-slate-700 bg-slate-800 text-slate-100 placeholder-slate-500":"border-slate-200 bg-white text-slate-700"} rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400`}/>
+              </div>
+              <div><label className={`text-xs font-semibold uppercase tracking-wide mb-2 block ${textSec}`}>Color</label>
+                <div className="flex gap-2 flex-wrap">{PROJECT_COLORS.map((c,i)=><button key={i} onClick={()=>setColorIdx(i)} className={`w-7 h-7 rounded-full ${c} transition-all ${colorIdx===i?"ring-2 ring-offset-2 ring-indigo-400 scale-110":""}`}/>)}</div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={onClose} className={`px-4 py-2 rounded-xl text-sm ${textSec} ${d?"hover:bg-slate-800":"hover:bg-slate-100"} transition-colors`}>Cancel</button>
+              <button onClick={()=>name.trim()&&onSave(name.trim(),colorIdx)} className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors">Create Project</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── MyDay ──
+    function MyDay({tasks,setTasks,calDate,setCalDate,calStr,calDayTasks,unscheduledCalTasks,tasksInHour,scheduleTask,unscheduleTask,focusMode,setFocusMode,projects,toggleDone,setEditTask,setShowModal,dk}) {
+      const {isDark:d,surface,border,textPri,textSec,textMut,hov} = dk;
+      const isToday=calStr===todayStr;
+      const [dragTaskId,setDragTaskId]=useState(null);
+      const [hovHour,setHovHour]=useState(null);
+      const [quickAdd,setQuickAdd]=useState(null);
+      const [quickTitle,setQuickTitle]=useState("");
+      const fm=focusMode;
+      const tlBg=fm?"bg-slate-900 border-slate-800":`${surface} ${border}`;
+
+      const handleDropOnHour=(hour)=>{if(dragTaskId){scheduleTask(dragTaskId,hour,calStr);setDragTaskId(null);}setHovHour(null);};
+      const handleQuickAdd=(hour)=>{
+        if(!quickTitle.trim()){setQuickAdd(null);return;}
+        setTasks(ts=>[...ts,{id:Date.now(),title:quickTitle.trim(),desc:"",deadline:calStr,priority:"Medium",status:"To Do",category:"Work",project:null,time:hour,done:false}]);
+        setQuickAdd(null);setQuickTitle("");
+      };
+
+      return(
+        <div className={`p-7 h-full flex flex-col ${fm?"bg-slate-900":""}`}>
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <h1 className={`text-xl font-bold ${fm?"text-white":textPri}`}>My Day</h1>
+              <p className={`text-sm mt-0.5 ${fm?"text-slate-400":textSec}`}>{fmt(calDate)}{isToday?" · Today":""}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className={`flex items-center gap-1 rounded-xl border ${fm?"border-slate-700":`${border} ${surface}`} p-1`}>
+                <button onClick={()=>setCalDate(cv=>addDays(cv,-1))} className={`p-1.5 rounded-lg ${fm?"text-slate-400 hover:text-white":`${textSec} ${hov}`} transition-colors`}><ChevronLeft size={15}/></button>
+                <button onClick={()=>setCalDate(new Date())} className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${isToday?(fm?"bg-slate-700 text-white":"bg-indigo-50 text-indigo-700"):(fm?"text-slate-400":textSec)}`}>Today</button>
+                <button onClick={()=>setCalDate(cv=>addDays(cv,1))} className={`p-1.5 rounded-lg ${fm?"text-slate-400 hover:text-white":`${textSec} ${hov}`} transition-colors`}><ChevronRight size={15}/></button>
+              </div>
+              <button onClick={()=>setFocusMode(f=>!f)} className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-xl transition-colors ${fm?"bg-indigo-500 text-white":d?"bg-slate-800 text-slate-200 hover:bg-slate-700":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`}><Target size={15}/>{fm?"Exit Focus":"Focus Mode"}</button>
+            </div>
+          </div>
+          <div className="flex gap-5 flex-1 overflow-hidden">
+            <div className={`flex-1 rounded-2xl border overflow-y-auto ${tlBg}`}>
+              <div className="p-3">
+                {HOURS.map(hour=>{
+                  const slotTasks=tasksInHour(hour,calStr);
+                  const isHov=hovHour===hour&&dragTaskId;
+                  const isQA=quickAdd===hour;
+                  return(
+                    <div key={hour} onDragOver={e=>{e.preventDefault();setHovHour(hour);}} onDragLeave={()=>setHovHour(null)} onDrop={()=>handleDropOnHour(hour)}
+                      className={`flex gap-3 border-b last:border-b-0 ${fm||d?"border-slate-800":"border-slate-100"} py-1 min-h-14 group transition-colors ${isHov?(fm||d?"bg-slate-800":"bg-indigo-50/70"):""}`}>
+                      <span className={`text-xs font-mono w-12 shrink-0 pt-2 ${fm||d?"text-slate-500":textMut}`}>{hour}</span>
+                      <div className="flex-1 flex flex-col gap-1 py-1">
+                        {slotTasks.map(t=>(
+                          <CalendarTaskChip key={t.id} task={t} focusMode={fm} projects={projects} dk={dk}
+                            onDragStart={()=>setDragTaskId(t.id)} onDragEnd={()=>setDragTaskId(null)}
+                            onEdit={()=>{setEditTask(t);setShowModal(true);}}
+                            onRemove={()=>unscheduleTask(t.id,calStr)}
+                            onToggle={()=>toggleDone(t.id)}/>
+                        ))}
+                        {isQA?(
+                          <div className="flex items-center gap-2">
+                            <input autoFocus value={quickTitle} onChange={e=>setQuickTitle(e.target.value)}
+                              onKeyDown={e=>{if(e.key==="Enter")handleQuickAdd(hour);if(e.key==="Escape"){setQuickAdd(null);setQuickTitle("");}}}
+                              placeholder="Task title… Enter to save"
+                              className={`flex-1 text-sm rounded-lg px-3 py-1.5 outline-none border focus:ring-2 focus:ring-indigo-300 ${d?"bg-slate-800 border-slate-600 text-white placeholder-slate-400":"bg-white border-indigo-300 text-slate-700 placeholder-slate-400"}`}/>
+                            <button onClick={()=>handleQuickAdd(hour)} className="text-indigo-400 hover:text-indigo-300 font-medium text-xs px-2">Add</button>
+                            <button onClick={()=>{setQuickAdd(null);setQuickTitle("");}} className={`${textMut} hover:text-red-400`}><X size={13}/></button>
+                          </div>
+                        ):(
+                          <button onClick={()=>{setQuickAdd(hour);setQuickTitle("");}}
+                            className={`text-xs flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 ${fm||d?"text-slate-500 hover:text-slate-300":textMut+" hover:text-indigo-500"}`}>
+                            <Plus size={12}/>Add task
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            {!focusMode&&(
+              <div className="w-64 shrink-0 flex flex-col gap-3">
+                <h3 className={`text-sm font-semibold ${textPri}`}>Unscheduled</h3>
+                <p className={`text-xs -mt-2 ${textMut}`}>Drag onto the timeline or drop into a slot</p>
+                {unscheduledCalTasks.length===0?(
+                  <div className={`${surface} rounded-2xl border ${border} p-6 text-center`}>
+                    <Coffee size={22} className={`mx-auto mb-2 ${textMut}`}/>
+                    <p className={`text-xs ${textMut}`}>Nothing to schedule!</p>
+                  </div>
+                ):(
+                  <div className="flex flex-col gap-2 overflow-y-auto">
+                    {unscheduledCalTasks.map(t=>(
+                      <div key={t.id} draggable onDragStart={()=>setDragTaskId(t.id)} onDragEnd={()=>setDragTaskId(null)}
+                        className={`${d?"bg-slate-800 border-slate-700":"bg-white border-slate-200"} border rounded-xl p-3 cursor-grab hover:shadow-md transition-all select-none`}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${PRIORITY_DOT[t.priority]}`}/>
+                          <span className={`text-sm font-medium leading-snug ${textPri}`}>{t.title}</span>
+                        </div>
+                        <div className="flex items-center gap-1 ml-4">
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${PRIORITY_COLOR[t.priority]}`}>{t.priority}</span>
+                        </div>
+                        <p className={`text-xs mt-1.5 ml-4 flex items-center gap-1 ${textMut}`}><Calendar size={10}/>Drag to schedule</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function CalendarTaskChip({task,focusMode,projects,onDragStart,onDragEnd,onEdit,onRemove,onToggle,dk}) {
+      const {isDark:d} = dk;
+      const [hov,setHov]=useState(false);
+      const proj=projects?.find(p=>p.id===task.project);
+      return(
+        <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
+          onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+          className={`rounded-xl px-3 py-2 flex items-center gap-2 cursor-grab select-none group transition-all ${d?"bg-indigo-950 text-indigo-300 border border-indigo-900":"bg-indigo-50 text-indigo-800"}`}>
+          <button onClick={onToggle} className="shrink-0 text-indigo-400 hover:text-emerald-400 transition-colors">{task.done?<CheckCircle2 size={14} className="text-emerald-400"/>:<Circle size={14}/>}</button>
+          <span className={`text-sm font-medium flex-1 ${task.done?"line-through opacity-50":""}`}>{task.title}</span>
+          <div className={`flex items-center gap-1 transition-opacity ${hov?"opacity-100":"opacity-0"}`}>
+            <button onClick={onEdit} className="p-1 rounded hover:bg-indigo-200/20"><Edit3 size={12}/></button>
+            <button onClick={onRemove} className="p-1 rounded hover:bg-red-200/20 text-red-400"><X size={12}/></button>
+          </div>
+          {proj&&<span className={`text-xs px-1.5 py-0.5 rounded-full text-white font-medium ${PROJECT_COLORS[proj.colorIdx%PROJECT_COLORS.length]} shrink-0`}>{proj.name}</span>}
+        </div>
+      );
+    }
+
+    // ── Notes ──
+    function Notes({notes,selectedNote,setSelectedNote,addNote,deleteNote,toggleFav,setNotes,dk}) {
+      const {isDark:d,surface,border,textPri,textSec,textMut,hov} = dk;
+      const note=notes.find(n=>n.id===selectedNote);
+      const updateTitle=(id,val)=>setNotes(ns=>ns.map(n=>n.id===id?{...n,title:val}:n));
+      const updateBlock=(id,i,val)=>setNotes(ns=>ns.map(n=>n.id===id?{...n,content:n.content.map((b,j)=>j===i?{...b,text:val}:b)}:n));
+      const toggleCheck=(id,i)=>setNotes(ns=>ns.map(n=>n.id===id?{...n,content:n.content.map((b,j)=>j===i?{...b,checked:!b.checked}:b)}:n));
+      return(
+        <div className="flex h-full overflow-hidden">
+          <div className={`w-64 ${d?"bg-slate-900 border-slate-700":"bg-white border-slate-100"} border-r flex flex-col p-4 shrink-0`}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className={`font-bold text-sm ${textPri}`}>Notes</h2>
+              <button onClick={addNote} className={`p-1.5 rounded-lg ${d?"bg-indigo-950 text-indigo-400 hover:bg-indigo-900":"bg-indigo-50 text-indigo-600 hover:bg-indigo-100"} transition-colors`}><Plus size={15}/></button>
+            </div>
+            <div className="flex flex-col gap-1 overflow-y-auto">
+              {notes.filter(n=>n.fav).length>0&&(
+                <div className="mb-2">
+                  <p className={`text-xs font-semibold uppercase tracking-wide mb-1 px-2 ${textMut}`}>Favorites</p>
+                  {notes.filter(n=>n.fav).map(n=><NoteItem key={n.id} note={n} selected={selectedNote===n.id} onSelect={()=>setSelectedNote(n.id)} onFav={()=>toggleFav(n.id)} onDelete={()=>deleteNote(n.id)} dk={dk}/>)}
+                </div>
+              )}
+              <p className={`text-xs font-semibold uppercase tracking-wide mb-1 px-2 ${textMut}`}>All Notes</p>
+              {notes.filter(n=>!n.fav).map(n=><NoteItem key={n.id} note={n} selected={selectedNote===n.id} onSelect={()=>setSelectedNote(n.id)} onFav={()=>toggleFav(n.id)} onDelete={()=>deleteNote(n.id)} dk={dk}/>)}
+              {notes.length===0&&<p className={`text-xs px-2 ${textMut}`}>No notes yet. Create one!</p>}
+            </div>
+          </div>
+          <div className={`flex-1 overflow-y-auto p-8 ${d?"bg-slate-950":"bg-slate-50"}`}>
+            {!note?(
+              <div className="flex flex-col items-center justify-center h-full">
+                <BookOpen size={36} className={`mb-3 opacity-40 ${textMut}`}/>
+                <p className={`font-medium ${textSec}`}>Select a note or create one</p>
+              </div>
+            ):(
+              <div className="max-w-2xl mx-auto">
+                <input value={note.title} onChange={e=>updateTitle(note.id,e.target.value)}
+                  className={`w-full text-3xl font-bold bg-transparent outline-none mb-6 ${d?"text-slate-100 placeholder-slate-600":"text-slate-800 placeholder-slate-300"}`} placeholder="Untitled"/>
+                <div className="flex flex-col gap-2">
+                  {note.content.map((block,i)=><NoteBlock key={i} block={block} onChange={v=>updateBlock(note.id,i,v)} onCheck={()=>toggleCheck(note.id,i)} dk={dk}/>)}
+                </div>
+                <button onClick={()=>setNotes(ns=>ns.map(n=>n.id===note.id?{...n,content:[...n.content,{type:"p",text:""}]}:n))}
+                  className={`mt-4 text-sm flex items-center gap-1 ${textMut} hover:text-indigo-400 transition-colors`}><Plus size={14}/>Add block</button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function NoteItem({note,selected,onSelect,onFav,onDelete,dk}) {
+      const {isDark:d,textPri,textMut} = dk;
+      const [hov,setHov]=useState(false);
+      return(
+        <div onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)} onClick={onSelect}
+          className={`flex items-center gap-2 px-2 py-2.5 rounded-xl cursor-pointer transition-all ${selected?(d?"bg-indigo-900 text-indigo-300":"bg-indigo-50 text-indigo-700"):(d?"hover:bg-slate-800 text-slate-400":"hover:bg-slate-50 text-slate-600")}`}>
+          <FileText size={14} className="shrink-0"/>
+          <span className="text-sm font-medium flex-1 truncate">{note.title}</span>
+          {hov&&<div className="flex gap-1">
+            <button onClick={e=>{e.stopPropagation();onFav();}} className={`${note.fav?"text-amber-400":"text-slate-300 hover:text-amber-400"}`}><Star size={12}/></button>
+            <button onClick={e=>{e.stopPropagation();onDelete();}} className="text-slate-300 hover:text-red-400"><Trash2 size={12}/></button>
+          </div>}
+        </div>
+      );
+    }
+
+    function NoteBlock({block,onChange,onCheck,dk}) {
+      const {isDark:d} = dk;
+      const base=`w-full bg-transparent outline-none resize-none ${d?"text-slate-200":"text-slate-700"}`;
+      if(block.type==="h2") return <input value={block.text} onChange={e=>onChange(e.target.value)} className={`${base} text-2xl font-bold border-b ${d?"border-slate-700":"border-slate-200"} pb-2 mb-1`}/>;
+      if(block.type==="h3") return <input value={block.text} onChange={e=>onChange(e.target.value)} className={`${base} text-lg font-semibold`}/>;
+      if(block.type==="bullet") return <div className="flex items-start gap-2"><span className={`mt-1.5 shrink-0 ${d?"text-slate-500":"text-slate-400"}`}>•</span><input value={block.text} onChange={e=>onChange(e.target.value)} className={`${base} text-sm leading-relaxed`}/></div>;
+      if(block.type==="check") return(
+        <div className="flex items-center gap-2">
+          <button onClick={onCheck} className="shrink-0">{block.checked?<CheckCircle2 size={16} className="text-emerald-500"/>:<Circle size={16} className={d?"text-slate-500":"text-slate-300"}/>}</button>
+          <input value={block.text} onChange={e=>onChange(e.target.value)} className={`${base} text-sm ${block.checked?"line-through opacity-40":""}`}/>
+        </div>
+      );
+      return <textarea value={block.text} onChange={e=>onChange(e.target.value)} rows={2} className={`${base} text-sm leading-relaxed`}/>;
+    }
+
+    // ── Settings ──
+    function SettingsPage({theme,setTheme,dk}) {
+      const {isDark:d,surface,border,textPri,textSec,textMut} = dk;
+      const [notif,setNotif]=useState(true);
+      const [name,setName]=useState("Sofia");
+      return(
+        <div className="p-7 max-w-2xl">
+          <h1 className={`text-xl font-bold mb-6 ${textPri}`}>Settings</h1>
+          {[
+            {label:"Profile",children:(
+              <div><label className={`text-xs font-semibold uppercase tracking-wide block mb-1 ${textSec}`}>Display Name</label>
+                <input value={name} onChange={e=>setName(e.target.value)} className={`border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 w-full max-w-xs ${d?"border-slate-700 bg-slate-800 text-slate-100":"border-slate-200 bg-white text-slate-700"}`}/></div>
+            )},
+            {label:"Appearance",children:(
+              <div className="flex flex-col gap-3">
+                <div className="flex gap-3">
+                  {["Light","Dark","System"].map(t=>(
+                    <button key={t} onClick={()=>setTheme(t)} className={`px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${theme===t?"bg-indigo-600 text-white border-indigo-600":d?"border-slate-600 text-slate-300 hover:bg-slate-800":"border-slate-200 text-slate-600 hover:bg-slate-50"}`}>{t}</button>
+                  ))}
+                </div>
+                <p className={`text-xs ${textMut}`}>Current: <span className="font-medium">{theme}</span> mode</p>
+              </div>
+            )},
+            {label:"Notifications",children:(
+              <div className="flex items-center gap-3">
+                <span className={`text-sm ${textPri}`}>Enable deadline reminders</span>
+                <button onClick={()=>setNotif(v=>!v)} className={`w-11 h-6 rounded-full transition-colors relative ${notif?"bg-indigo-600":"bg-slate-400"}`}>
+                  <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${notif?"left-5":"left-0.5"}`}/>
+                </button>
+              </div>
+            )},
+          ].map(({label,children})=>(
+            <div key={label} className={`${surface} rounded-2xl border ${border} p-5 mb-4`}>
+              <h2 className={`font-semibold text-sm mb-4 ${textPri}`}>{label}</h2>{children}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>
