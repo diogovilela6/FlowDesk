@@ -80,12 +80,7 @@
     const todayStr = dateStr(today);
     const tomorrowStr = dateStr(addDays(today,1));
 
-    const initProjects = [
-      {id:"p1",name:"Website Redesign",colorIdx:0},
-      {id:"p2",name:"Q3 Planning",colorIdx:1},
-      {id:"p3",name:"Mobile App",colorIdx:2},
-      {id:"p4",name:"Marketing",colorIdx:3},
-    ];
+    const initProjects = [];
 
     const initTasks = [];
     const initNotes = [];
@@ -106,7 +101,7 @@
       const [calDate, setCalDate] = useState(new Date(today));
       const [calSchedule, setCalSchedule] = useState({});
       const [focusMode, setFocusMode] = useState(false);
-      const [showProjectModal, setShowProjectModal] = useState(false);
+      const [editProject, setEditProject] = useState(null); // {id, name, colorIdx}
       const [dashExpanded, setDashExpanded] = useState(null);
       const [theme, setTheme] = useState("Light");
 
@@ -208,14 +203,14 @@
             </header>
             <main className="flex-1 overflow-auto">
               {section==="dashboard"&&<Dashboard tasks={tasks} overdue={overdue} dueToday={dueToday} dueTomorrow={dueTomorrow} dueThisWeek={dueThisWeek} priorityAlerts={priorityAlerts} dismissedAlerts={dismissedAlerts} setDismissedAlerts={setDismissedAlerts} progressPct={progressPct} completedToday={completedToday} totalToday={totalToday} notes={notes} setSection={setSection} dashExpanded={dashExpanded} setDashExpanded={setDashExpanded} toggleDone={toggleDone} projects={projects} dk={dk}/>}
-              {section==="tasks"&&<TaskBoard tasks={filteredTasks} allTasks={tasks} projects={projects} filterPriority={filterPriority} setFilterPriority={setFilterPriority} moveTask={moveTask} toggleDone={toggleDone} deleteTask={deleteTask} setEditTask={setEditTask} setShowModal={setShowModal} deleteProject={deleteProject} showProjectModal={showProjectModal} setShowProjectModal={setShowProjectModal} addProject={addProject} dk={dk}/>}
+              {section==="tasks"&&<TaskBoard tasks={filteredTasks} allTasks={tasks} projects={projects} filterPriority={filterPriority} setFilterPriority={setFilterPriority} moveTask={moveTask} toggleDone={toggleDone} deleteTask={deleteTask} setEditTask={setEditTask} setShowModal={setShowModal} deleteProject={deleteProject} showProjectModal={showProjectModal} setShowProjectModal={setShowProjectModal} addProject={addProject} setEditProject={setEditProject} dk={dk}/>}
               {section==="myday"&&<MyDay tasks={tasks} setTasks={setTasks} calDate={calDate} setCalDate={setCalDate} calStr={calStr} calDayTasks={calDayTasks} unscheduledCalTasks={unscheduledCalTasks} tasksInHour={tasksInHour} scheduleTask={scheduleTask} unscheduleTask={unscheduleTask} focusMode={focusMode} setFocusMode={setFocusMode} projects={projects} toggleDone={toggleDone} setEditTask={setEditTask} setShowModal={setShowModal} dk={dk}/>}
               {section==="notes"&&<Notes notes={notes} selectedNote={selectedNote} setSelectedNote={setSelectedNote} addNote={()=>{const n={id:Date.now(),title:"Untitled Note",fav:false,content:[{type:"h2",text:"Untitled Note"},{type:"p",text:"Start writing..."}]};setNotes(ns=>[n,...ns]);setSelectedNote(n.id);}} deleteNote={id=>setNotes(ns=>ns.filter(n=>n.id!==id))} toggleFav={id=>setNotes(ns=>ns.map(n=>n.id===id?{...n,fav:!n.fav}:n))} setNotes={setNotes} dk={dk}/>}
               {section==="settings"&&<SettingsPage theme={theme} setTheme={setTheme} dk={dk}/>}
             </main>
           </div>
           {showModal&&<TaskModal task={editTask} projects={projects} onSave={handleAddTask} onClose={()=>{setShowModal(false);setEditTask(null);}} dk={dk}/>}
-          {showProjectModal&&<ProjectModal onSave={(n,c)=>{addProject(n,c);setShowProjectModal(false);}} onClose={()=>setShowProjectModal(false)} dk={dk}/>}
+          {showProjectModal&&<ProjectModal project={editProject} onSave={saveProject} onClose={()=>{setShowProjectModal(false);setEditProject(null);}} dk={dk}/>}
         </div>
       );
     }
@@ -364,7 +359,7 @@
     }
 
     // ── TaskBoard ──
-    function TaskBoard({tasks,allTasks,projects,filterPriority,setFilterPriority,moveTask,toggleDone,deleteTask,setEditTask,setShowModal,deleteProject,showProjectModal,setShowProjectModal,addProject,dk}) {
+    function TaskBoard({tasks,allTasks,projects,filterPriority,setFilterPriority,moveTask,toggleDone,deleteTask,setEditTask,setShowModal,deleteProject,showProjectModal,setShowProjectModal,addProject,setEditProject,dk}) {
       const {isDark:d,surface,border,textPri,textSec,textMut,hov} = dk;
       const [dragId,setDragId]=useState(null);
       const [overProj,setOverProj]=useState(null);
@@ -407,7 +402,8 @@
                       </div>
                       <div className="flex items-center gap-1">
                         <span className={`text-xs font-medium ${textMut} ${d?"bg-slate-800":"bg-slate-100"} rounded-full px-2 py-0.5`}>{ptasks.length}</span>
-                        <button onClick={()=>deleteProject(proj.id)} className="text-slate-400 hover:text-red-400 ml-1 p-0.5"><Trash2 size={13}/></button>
+                        <button onClick={()=>{setEditProject(proj);setShowProjectModal(true);}} className="text-slate-400 hover:text-indigo-400 ml-1 p-0.5"><Edit3 size={13}/></button>
+                        <button onClick={()=>deleteProject(proj.id)} className="text-slate-400 hover:text-red-400 p-0.5"><Trash2 size={13}/></button>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -517,15 +513,15 @@
       );
     }
 
-    function ProjectModal({onSave,onClose,dk}) {
+    function ProjectModal({project,onSave,onClose,dk}) {
       const {isDark:d,surface,border,textPri,textSec,textMut} = dk;
-      const [name,setName]=useState("");
-      const [colorIdx,setColorIdx]=useState(0);
+      const [name,setName]=useState(project?.name||"");
+      const [colorIdx,setColorIdx]=useState(project?.colorIdx??0);
       return(
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
           <div className={`${surface} rounded-2xl shadow-2xl w-full max-w-sm p-6`} onClick={e=>e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h2 className={`text-lg font-bold ${textPri}`}>New Project</h2>
+              <h2 className={`text-lg font-bold ${textPri}`}>{project?"Edit Project":"New Project"}</h2>
               <button onClick={onClose} className={`${textMut} hover:text-red-400`}><X size={18}/></button>
             </div>
             <div className="flex flex-col gap-4">
@@ -539,7 +535,7 @@
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={onClose} className={`px-4 py-2 rounded-xl text-sm ${textSec} ${d?"hover:bg-slate-800":"hover:bg-slate-100"} transition-colors`}>Cancel</button>
-              <button onClick={()=>name.trim()&&onSave(name.trim(),colorIdx)} className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors">Create Project</button>
+              <button onClick={()=>name.trim()&&onSave(name.trim(),colorIdx)} className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors">{project?"Save Changes":"Create Project"}</button>
             </div>
           </div>
         </div>
@@ -572,12 +568,13 @@
               <p className={`text-sm mt-0.5 ${fm?"text-slate-400":textSec}`}>{fmt(calDate)}{isToday?" · Today":""}</p>
             </div>
             <div className="flex items-center gap-3">
-              <div className={`flex items-center gap-1 rounded-xl border ${fm?"border-slate-700":`${border} ${surface}`} p-1`}>
-                <button onClick={()=>setCalDate(cv=>addDays(cv,-1))} className={`p-1.5 rounded-lg ${fm?"text-slate-400 hover:text-white":`${textSec} ${hov}`} transition-colors`}><ChevronLeft size={15}/></button>
-                <button onClick={()=>setCalDate(new Date())} className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${isToday?(fm?"bg-slate-700 text-white":"bg-indigo-50 text-indigo-700"):(fm?"text-slate-400":textSec)}`}>Today</button>
-                <button onClick={()=>setCalDate(cv=>addDays(cv,1))} className={`p-1.5 rounded-lg ${fm?"text-slate-400 hover:text-white":`${textSec} ${hov}`} transition-colors`}><ChevronRight size={15}/></button>
+              <div className={`flex items-center gap-1 rounded-xl border ${border} ${surface} p-1`}>
+                <button onClick={()=>setCalDate(cv=>addDays(cv,-1))} className={`p-1.5 rounded-lg ${textSec} ${hov} transition-colors`}><ChevronLeft size={15}/></button>
+                <button onClick={()=>setCalDate(new Date())} className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1 ${isToday?"bg-indigo-50 text-indigo-700":textSec}`}>
+                  <ChevronLeft size={12} className="opacity-50"/><span>Today</span><ChevronRight size={12} className="opacity-50"/>
+                </button>
+                <button onClick={()=>setCalDate(cv=>addDays(cv,1))} className={`p-1.5 rounded-lg ${textSec} ${hov} transition-colors`}><ChevronRight size={15}/></button>
               </div>
-              <button onClick={()=>setFocusMode(f=>!f)} className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-xl transition-colors ${fm?"bg-indigo-500 text-white":d?"bg-slate-800 text-slate-200 hover:bg-slate-700":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`}><Target size={15}/>{fm?"Exit Focus":"Focus Mode"}</button>
             </div>
           </div>
           <div className="flex gap-5 flex-1 overflow-hidden">
