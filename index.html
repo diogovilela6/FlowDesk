@@ -60,7 +60,7 @@ const HOURS = Array.from({length:17},(_,i)=>`${String(i+8).padStart(2,"0")}:00`)
 const SLOT_H = 64;
 
 const today = new Date();
-const fmt = d => d.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});
+const fmt = d => d.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"short",year:"numeric"});
 const fmtS = d => d.toLocaleDateString("en-GB",{day:"numeric",month:"short"});
 const addDays = (d,n) => { const x=new Date(d); x.setDate(x.getDate()+n); return x; };
 const ds = d => d.toISOString().split("T")[0];
@@ -584,11 +584,17 @@ function ProjectModal({project,onSave,onClose,dk}) {
 function MyDay({tasks,setTasks,calDate,setCalDate,calStr,updateTaskTime,updateTaskDuration,unscheduleTask,projects,toggleDone,setEditTask,dk}) {
   const {d,surface,border,textPri,textSec,textMut,hov} = dk;
   const isToday = calStr === todayStr;
+  const isTomorrow = calStr === tomorrowStr;
+  const isYesterday = calStr === ds(addDays(today,-1));
+  const dayLabel = isToday ? "Today"
+    : isTomorrow ? "Tomorrow"
+    : isYesterday ? "Yesterday"
+    : calDate.toLocaleDateString("en-GB",{weekday:"long"});
   const gridRef = useRef(null);
 
-  // Tasks for this day
+  // Tasks for this day (keep done tasks visible too)
   const dayTasks = tasks.filter(t => t.deadline === calStr);
-  const scheduledTasks = dayTasks.filter(t => t.time && !t.done);
+  const scheduledTasks = dayTasks.filter(t => t.time);
   const unscheduledTasks = dayTasks.filter(t => !t.time && !t.done);
 
   // Drag state — handles both moving and resizing
@@ -705,13 +711,13 @@ function MyDay({tasks,setTasks,calDate,setCalDate,calStr,updateTaskTime,updateTa
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className={`text-xl font-bold ${textPri}`}>My Day</h1>
-          <p className={`text-sm mt-0.5 ${textSec}`}>{fmt(calDate)}{isToday?" · Today":""}</p>
+          <p className={`text-sm mt-0.5 ${textSec}`}>{fmt(calDate)}</p>
         </div>
         <div className={`flex items-center gap-1 rounded-xl border ${border} ${surface} p-1`}>
           <button onClick={()=>setCalDate(cv=>addDays(cv,-1))} className={`p-1.5 rounded-lg ${textSec} ${hov} transition-colors`}><Icons.ChevronLeft size={15}/></button>
           <button onClick={()=>setCalDate(new Date())}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1 ${isToday?"bg-indigo-50 text-indigo-700":textSec}`}>
-            <Icons.ChevronLeft size={11} className="opacity-40"/><span>Today</span><Icons.ChevronRight size={11} className="opacity-40"/>
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1 min-w-[100px] justify-center ${isToday?"bg-indigo-50 text-indigo-700":textSec}`}>
+            <Icons.ChevronLeft size={11} className="opacity-40"/><span>{dayLabel}</span><Icons.ChevronRight size={11} className="opacity-40"/>
           </button>
           <button onClick={()=>setCalDate(cv=>addDays(cv,1))} className={`p-1.5 rounded-lg ${textSec} ${hov} transition-colors`}><Icons.ChevronRight size={15}/></button>
         </div>
